@@ -41,11 +41,12 @@ int ComputationManager::requestComputation(Computation c) {
 
 void ComputationManager::abortComputation(int id) {
     monitorIn();
+
+    aborted.emplace_back(id);
     if(resultMap.find(id)!=resultMap.end()){
         resultMap.erase(resultMap.find(id));
-        signal(notEmptyResult);
     }
-    aborted.emplace_back(id);
+    signal(notEmptyResult);
     monitorOut();
     // TODO
 }
@@ -58,12 +59,14 @@ Result ComputationManager::getNextResult() {
     monitorIn();
     while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
         resultId++;
+
     }
     while(resultMap.size()==0 or resultMap.find(resultId)==resultMap.end()){
+
+        wait(notEmptyResult);
         while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
             resultId++;
         }
-        wait(notEmptyResult);
     }
     Result r = resultMap.begin()->second;
     resultId++;
