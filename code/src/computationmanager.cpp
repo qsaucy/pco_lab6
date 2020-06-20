@@ -22,13 +22,18 @@ ComputationManager::ComputationManager(int maxQueueSize): MAX_TOLERATED_QUEUE_SI
     for(int i =0;i<NBR_OPTIONS;i++){
         queueBuffer.push_back(std::queue<Request>());
     }
-    }
+}
 
 int ComputationManager::requestComputation(Computation c) {
     monitorIn();
     size_t valueOfComputationType = (size_t)c.computationType;
-    if (queueBuffer.at(valueOfComputationType).size()==MAX_TOLERATED_QUEUE_SIZE)
+    if (queueBuffer.at(valueOfComputationType).size()==MAX_TOLERATED_QUEUE_SIZE){
+        if(stopped)
+            throwStopException();
         wait (notFull.at(valueOfComputationType));
+        if(stopped)
+            throwStopException();
+    }
     queueBuffer.at(valueOfComputationType).emplace(Request(c,id));
     int oldId =id;
     id++;
@@ -62,8 +67,13 @@ Result ComputationManager::getNextResult() {
 
     }
     while(resultMap.size()==0 or resultMap.find(resultId)==resultMap.end()){
-
+        if(stopped)
+            throwStopException();
         wait(notEmptyResult);
+        if(stopped)
+            throwStopException();
+
+
         while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
             resultId++;
         }
@@ -86,8 +96,13 @@ Request ComputationManager::getWork(ComputationType computationType) {
     size_t valueOfComputationType = (size_t)computationType;
     bool f =true;
     while(f){
-        if (queueBuffer.at(valueOfComputationType).size()==0)
+        if (queueBuffer.at(valueOfComputationType).size()==0){
+            if(stopped)
+                throwStopException();
             wait(notEmpty.at(valueOfComputationType));
+            if(stopped)
+                throwStopException();
+        }
         if ( std::find(aborted.begin(),aborted.end(),queueBuffer.at(valueOfComputationType).front().getId())!=aborted.end())
              queueBuffer.at(valueOfComputationType).pop();
         else
@@ -97,6 +112,8 @@ Request ComputationManager::getWork(ComputationType computationType) {
     queueBuffer.at(valueOfComputationType).pop();
     signal(notFull.at(valueOfComputationType));
     monitorOut();
+
+
     return r;
 }
 
@@ -115,5 +132,7 @@ void ComputationManager::provideResult(Result result) {
 }
 
 void ComputationManager::stop() {
-    // TODO
+    monitorIn();
+    stopped = true;
+    monitorOut();
 }
