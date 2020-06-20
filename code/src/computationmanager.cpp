@@ -27,21 +27,22 @@ ComputationManager::ComputationManager(int maxQueueSize): MAX_TOLERATED_QUEUE_SI
 int ComputationManager::requestComputation(Computation c) {
     monitorIn();
     size_t valueOfComputationType = (size_t)c.computationType;
-    if (queueBuffer.at(valueOfComputationType).size()==MAX_TOLERATED_QUEUE_SIZE){
-        if(stopped)
-            throwStopException();
+    if (!stopped && queueBuffer.at(valueOfComputationType).size()==MAX_TOLERATED_QUEUE_SIZE){
         wait (notFull.at(valueOfComputationType));
-        if(stopped)
-            throwStopException();
     }
+
+
+
     queueBuffer.at(valueOfComputationType).emplace(Request(c,id));
     int oldId =id;
     id++;
     signal(notEmpty.at(valueOfComputationType));
     monitorOut();
 
+    if(stopped) throwStopException();
     // TODO
     return oldId;
+
 }
 
 void ComputationManager::abortComputation(int id) {
@@ -66,22 +67,24 @@ Result ComputationManager::getNextResult() {
         resultId++;
 
     }
-    while(resultMap.size()==0 or resultMap.find(resultId)==resultMap.end()){
-        if(stopped)
-            throwStopException();
+
+    while((resultMap.size()==0 or resultMap.find(resultId)==resultMap.end())){
+        if(stopped) break;
         wait(notEmptyResult);
-        if(stopped)
-            throwStopException();
-
-
         while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
             resultId++;
         }
     }
+
     Result r = resultMap.begin()->second;
+    if(!stopped){
     resultId++;
     resultMap.erase(resultMap.begin());
+    }
     monitorOut();
+
+
+    if(stopped) throwStopException();
     //Result r = bufferRequest.front();
     return r;
 }
@@ -97,11 +100,9 @@ Request ComputationManager::getWork(ComputationType computationType) {
     bool f =true;
     while(f){
         if (queueBuffer.at(valueOfComputationType).size()==0){
-            if(stopped)
-                throwStopException();
+            if(stopped) throwStopException();
             wait(notEmpty.at(valueOfComputationType));
-            if(stopped)
-                throwStopException();
+
         }
         if ( std::find(aborted.begin(),aborted.end(),queueBuffer.at(valueOfComputationType).front().getId())!=aborted.end())
              queueBuffer.at(valueOfComputationType).pop();
@@ -112,7 +113,6 @@ Request ComputationManager::getWork(ComputationType computationType) {
     queueBuffer.at(valueOfComputationType).pop();
     signal(notFull.at(valueOfComputationType));
     monitorOut();
-
 
     return r;
 }
@@ -133,6 +133,27 @@ void ComputationManager::provideResult(Result result) {
 
 void ComputationManager::stop() {
     monitorIn();
+
     stopped = true;
+
+    for(auto it: queueBuffer){
+        for(unsigned i = 0; i < notEmpty.size(); ++i){
+            for(unsigned j = 0; j < it.size(); ++j){
+                signal(notEmpty.at(i));
+            }
+        }
+
+        for(unsigned i = 0; i < notFull.size(); ++i){
+            for(unsigned j = 0; j < it.size(); ++j){
+                signal(notFull.at(i));
+            }
+        }
+
+        for(unsigned i = 0; i < it.size(); ++i){
+            signal(notEmptyResult);
+        }
+    }
+
+
     monitorOut();
 }
