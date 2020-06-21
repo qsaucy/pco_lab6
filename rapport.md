@@ -171,7 +171,7 @@ void ComputationManager::abortComputation(int id) {
 
 On appelle cette méthode quand on souhaite alors arrêter un calcul qui est en cours. On le place dans la liste. Puis pour s’assurer qu’il n’y est pas 2 fois, on parcourt la liste pour s’en assurer. Si c’est le cas, on supprime la première occurrence. Puis on signale qu’un nouveau résultat peut être affiché.
 
-Pour ces deux méthodes nouvellement implémentées, il n’y aucun appel à *wait* car elles ne doivent pas êztre bloquantes.
+Pour ces deux méthodes nouvellement implémentées, il n’y aucun appel à *wait* car elles ne doivent pas être bloquantes.
 
 
 
@@ -238,11 +238,11 @@ Result ComputationManager::getNextResult() {
 }
 ```
 
-Dans cas-ci il fallait s’assurer que l’on faisait avancer la variable *resultId* autant de fois qu’il a de calculs qui ont été annulés. Et on s’assure ensuite qu’on fait de même lorsqu’un calcul a fini d’attendre, car il y a pu y avoir des calculs qui ont été annulés entre temps.
+Dans cas-ci, il fallait s’assurer que l’on faisait avancer la variable *resultId* autant de fois qu’il a de calculs qui ont été annulés. Et on s’assure ensuite qu’on fait de même lorsqu’un calcul a fini d’attendre, car il y a pu y avoir des calculs qui ont été annulés entre temps.
 
 
 
-Nous avons sur la GUI essyé d’arrêter un calcul A et de voir si l’ordre était correctement préservé.
+Nous avons, depuis la GUI, essayé d’arrêter un calcul A et de voir si l’ordre était correctement préservé.
 
 ![](./img/img4.png)
 
@@ -282,12 +282,6 @@ Cela doit venir un signal qui n’est pas appelé lorsqu’on est censé libére
 
 
 
-
-
-
-
-
-
 ```c++
 void ComputationManager::stop() {
     monitorIn();
@@ -312,6 +306,20 @@ void ComputationManager::stop() {
     monitorOut();
 }
 ```
+
+Cette méthode doit uniquement changer la valeur de *stopped* à true afin que certains de if vus précédemment ne passent plus. De plus, on relâche tous les threads qui seraient encore en attente. Pour cela, on parcourt queueBuffer qui contient 3 types de calculateurs et on relâche alors à chaque fois le nombre de threads qui attende pour *notEmpty* et *notFull* et tout pour chaque type de calculateur. On fait alors de même pour les threads qui attendent de pouvoir d’être affichés (*notEmptyResult*).
+
+
+
+Pour le reste, il n’y a pas de changements sauf l’ajout de l’appel à la méthode privée *throwStopException* si jamais la variable *stopped* est à true. 
+
+
+
+Finalement, nous avons testé que les threads étaient bien stoppés lorsque l’on appuie sur le bouton Stop.
+
+![](./img/img9.png)
+
+On note toutefois cette fois-ci que l’interblocage intervient bien car les threads ne semblent pas pouvoir se terminer correctement (Il devrait y avoir le message: “Compute engines threads are joinded”).
 
 
 
