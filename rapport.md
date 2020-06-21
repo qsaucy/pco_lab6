@@ -74,15 +74,74 @@ Encore une fois, on entre en section protégée on récupère le type de calcul 
 
 
 
+En lançant les tests, on voit que l’on passe effectivement tout:
+
 ![](./img/img1.png)
 
 
 
 ### Étape 2
 
+On souhaite maintenant pouvoir récupérer les résultats des calculateurs via *getNextResult* et *provideResult*.
+
+
+
+On a utilisé un autre élément afin de permettre de lier un calcul qui s’est terminé avec son id: la map *resultMap*.
+
+```c++
+void ComputationManager::provideResult(Result result) {
+    monitorIn();
+    resultMap.insert(std::pair<int,Result>(result.getId(),result));
+    signal(notEmptyResult);
+    monitorOut();
+}
+```
+
+*provideResult* sert sont à insérer les différentes résultats issus des calculs terminés. On protège donc cette section avec le moniteur et on signale qu’un élément y a justement été ajouté.
+
+
+
+```c++
+Result ComputationManager::getNextResult() {
+	monitorIn();
+
+    while((resultMap.size()==0)){
+        if(stopped) break;
+        wait(notEmptyResult);
+    }
+
+    Result r = resultMap.begin()->second;
+    if(!stopped){
+    	resultId++;
+    	resultMap.erase(resultMap.begin());
+    }
+    monitorOut();
+
+    return r;
+}
+```
+
+Dans cette méthode, on nous a indiqué que son appel est potentiellement blocant. En effet, on doit attendre qu’il y ait au moins un résultat en attente dans *resultMap* afin de permettre l’affichage de sa terminaison. On teste donc que cette map ne soit pas vide, sinon on attend. 
+
+On a prévu le cas où un appel au bouton d’arrêt aurait été déjà fait et on s’assure alors de ne pas incrémenter *resultId* et d’effacer un élément de la map si c’est le cas. Finalement on retourne ce résultat.
+
+
+
+On sait que normalement tous les tests de l’étape 1 passe encore car nous n’avons fait intervenir aucune variable utilisée précédemment. Il n’y a donc pas de risque de perturbation ou d’interblocage.
+
+
+
+En lançant les tests, on voit que l’on passe effectivement tout:
+
+![](./img/img2.png)
+
 
 
 ### Étape 3
+
+
+
+Comme ces méthodes ne sont pas blocantes, il n’y aucun appel à *wait* dedans.
 
 
 
