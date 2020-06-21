@@ -1,5 +1,7 @@
 ## PCO Labo 6
 
+**Auteurs:** Barros Henriques Chris, Saucy Quentin
+
 
 
 ### Étape 1
@@ -182,8 +184,8 @@ Request ComputationManager::getWork(ComputationType computationType) {
     monitorIn();
 
     size_t valueOfComputationType = (size_t)computationType;
-    bool f =true;
-    while(f){
+
+    while(true){
         if (queueBuffer.at(valueOfComputationType).size()==0){
             wait(notEmpty.at(valueOfComputationType));
         }
@@ -193,7 +195,7 @@ Request ComputationManager::getWork(ComputationType computationType) {
              queueBuffer.at(valueOfComputationType).pop();
         }
         else{
-             f =false;
+             break;
         }
     }
     Request r = queueBuffer.at(valueOfComputationType).front();
