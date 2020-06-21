@@ -97,7 +97,7 @@ void ComputationManager::provideResult(Result result) {
 }
 ```
 
-*provideResult* sert sont à insérer les différentes résultats issus des calculs terminés. On protège donc cette section avec le moniteur et on signale qu’un élément y a justement été ajouté.
+*provideResult*insère les différentes résultats issus des calculs terminés. On protège donc cette section avec le moniteur et on signale qu’un élément y a justement été ajouté.
 
 
 
@@ -121,7 +121,7 @@ Result ComputationManager::getNextResult() {
 }
 ```
 
-Dans cette méthode, on nous a indiqué que son appel est potentiellement blocant. En effet, on doit attendre qu’il y ait au moins un résultat en attente dans *resultMap* afin de permettre l’affichage de sa terminaison. On teste donc que cette map ne soit pas vide, sinon on attend. 
+Dans cette méthode, on nous a indiqué que son appel est potentiellement bloquant. En effet, on doit attendre qu’il y ait au moins un résultat en attente dans *resultMap* afin de permettre l’affichage de sa terminaison. On teste donc que cette map ne soit pas vide, sinon on attend. 
 
 On a prévu le cas où un appel au bouton d’arrêt aurait été déjà fait et on s’assure alors de ne pas incrémenter *resultId* et d’effacer un élément de la map si c’est le cas. Finalement on retourne ce résultat.
 
@@ -141,11 +141,183 @@ En lançant les tests, on voit que l’on passe effectivement tout:
 
 
 
-Comme ces méthodes ne sont pas blocantes, il n’y aucun appel à *wait* dedans.
+```c++
+bool ComputationManager::continueWork(int id) {
+    monitorIn();
+    if(std::find(aborted.begin(),aborted.end(),id)==aborted.end() && !stopped){
+        monitorOut();
+        return true;
+    }
+    monitorOut();
+    return false;
+}
+```
+
+Cette méthode sert simplement à contrôler qu’un calcul dont l’id a été passé en paramètre n’a pas été ajouté à la liste des calculs qui ont été stoppés. Si jamais on trouve le calcul, on renvoie true, sinon false.
+
+
+
+```c++
+void ComputationManager::abortComputation(int id) {
+    monitorIn();
+    aborted.emplace_back(id);
+    if(resultMap.find(id)!=resultMap.end()){
+        resultMap.erase(resultMap.find(id));
+    }
+    signal(notEmptyResult);
+    monitorOut();
+}
+```
+
+On appelle cette méthode quand on souhaite alors arrêter un calcul qui est en cours. On le place dans la liste. Puis pour s’assurer qu’il n’y est pas 2 fois, on parcourt la liste pour s’en assurer. Si c’est le cas, on supprime la première occurrence. Puis on signale qu’un nouveau résultat peut être affiché.
+
+Pour ces deux méthodes nouvellement implémentées, il n’y aucun appel à *wait* car elles ne doivent pas êztre bloquantes.
+
+
+
+On doit aussi modifier quelque peu le code que l’on avait écrit précédemment pour tenir compte de cet arrêt:
+
+```c++
+Request ComputationManager::getWork(ComputationType computationType) {
+    monitorIn();
+
+    size_t valueOfComputationType = (size_t)computationType;
+    bool f =true;
+    while(f){
+        if (queueBuffer.at(valueOfComputationType).size()==0){
+            wait(notEmpty.at(valueOfComputationType));
+        }
+
+        if ( std::find(aborted.begin(), aborted.end(), 												queueBuffer.at(valueOfComputationType).front().getId() ) 
+            != aborted.end()){
+             queueBuffer.at(valueOfComputationType).pop();
+        }
+        else{
+             f =false;
+        }
+    }
+    Request r = queueBuffer.at(valueOfComputationType).front();
+    queueBuffer.at(valueOfComputationType).pop();
+    signal(notFull.at(valueOfComputationType));
+    monitorOut();
+
+    return r;
+}
+```
+
+Il a fallu ajouter la boucle while qui permet de vérifier que le calcul n’a pas été ajouté dans la liste de ceux qui ont été annulés, sinon il faut le retirer de *queueBuffer*.
+
+
+
+```c++
+Result ComputationManager::getNextResult() {
+    monitorIn();
+
+    while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
+        resultId++;
+    }
+
+    while((resultMap.size()==0 or resultMap.find(resultId)==resultMap.end())){
+        if(stopped) break;
+        wait(notEmptyResult);
+        while (std::find(aborted.begin(),aborted.end(),resultId)!=aborted.end()) {
+            resultId++;
+        }
+    }
+
+    Result r = resultMap.begin()->second;
+    if(!stopped){
+    	resultId++;
+    	resultMap.erase(resultMap.begin());
+    }
+    monitorOut();
+
+
+    if(stopped) throwStopException();
+    return r;
+}
+```
+
+Dans cas-ci il fallait s’assurer que l’on faisait avancer la variable *resultId* autant de fois qu’il a de calculs qui ont été annulés. Et on s’assure ensuite qu’on fait de même lorsqu’un calcul a fini d’attendre, car il y a pu y avoir des calculs qui ont été annulés entre temps.
+
+
+
+Nous avons sur la GUI essyé d’arrêter un calcul A et de voir si l’ordre était correctement préservé.
+
+![](./img/img4.png)
+
+Comme on le voit, le A s’est correctement arrêté, et B et C se sont bien terminés en même temps car C a fini avant, mais B avait été appelé avant C. Puis une nouvelle tâche A est appelée et on voit qu’elle s’est correctement terminée.
+
+
+
+On peut alors se demander si appeler 3 calculs du même type et d’en arrêter empêcherait à un autre de démarrer:
+
+![](./img/img5.png)
+
+Mais comme on le voit ici, ce n’est pas le cas.
+
+
+
+On voit aussi que le nombre en train ayant fait une requête est bel et bien limité. 
+
+![](./img/img6.png)
+
+Mais qu’il ne reste pas pour autant bloqué:
+
+![](./img/img7.png)
+
+Dans ces trois captures, on voit bien entendu que les id sont toujours correctement respectés et l’ordre aussi.
+
+
+
+Mais pour une raison que l’on ignore, on ne passe pas le test de l’interblocage:
+
+![](./img/img3.png)
+
+Cela doit venir un signal qui n’est pas appelé lorsqu’on est censé libérer un calculateur. Mais nous n’avons pas réussi à régler ce problème. 
 
 
 
 ### Étape 4
+
+
+
+
+
+
+
+
+
+```c++
+void ComputationManager::stop() {
+    monitorIn();
+    stopped = true;
+    for(auto it: queueBuffer){
+        for(unsigned i = 0; i < notEmpty.size(); ++i){
+            for(unsigned j = 0; j < it.size(); ++j){
+                signal(notEmpty.at(i));
+            }
+        }
+
+        for(unsigned i = 0; i < notFull.size(); ++i){
+            for(unsigned j = 0; j < it.size(); ++j){
+                signal(notFull.at(i));
+            }
+        }
+
+        for(unsigned i = 0; i < it.size(); ++i){
+            signal(notEmptyResult);
+        }
+    }
+    monitorOut();
+}
+```
+
+
+
+![](./img/img8.png)
+
+Encore une fois, on ne passe pas le test de l’étape précédente ni deux autres de cette étape. Mais nous suspectons que l’interblocage empêche le relâchement et la garantie de l’ordre lorsque l’on termine avec stop.
 
 
 
